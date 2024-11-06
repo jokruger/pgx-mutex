@@ -88,7 +88,7 @@ func (m *Mutex) SyncMutex() SyncMutex {
 
 // Lock tries to acquire the advisory lock, blocking until it's available.
 func (m *Mutex) Lock() error {
-	if err := m.pool.QueryRow(m.ctx, "SELECT pg_advisory_lock($1)", m.lockID).Scan(); err != nil {
+	if _, err := m.pool.Exec(m.ctx, "SELECT pg_advisory_lock($1)", m.lockID); err != nil {
 		return fmt.Errorf("failed to acquire lock: %w", err)
 	}
 	return nil
@@ -106,7 +106,7 @@ func (m *Mutex) TryLock() (bool, error) {
 
 // Unlock releases the advisory lock if it's currently held.
 func (m *Mutex) Unlock() error {
-	if err := m.pool.QueryRow(m.ctx, "SELECT pg_advisory_unlock($1)", m.lockID).Scan(); err != nil {
+	if _, err := m.pool.Exec(m.ctx, "SELECT pg_advisory_unlock($1)", m.lockID); err != nil {
 		return fmt.Errorf("failed to release lock: %w", err)
 	}
 	return nil
