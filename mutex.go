@@ -10,10 +10,9 @@ import (
 
 // Mutex is a distributed lock based on PostgreSQL advisory locks
 type Mutex struct {
-	conn     *pgx.Conn
-	lockID   int64
-	lockHeld bool
-	ctx      context.Context
+	conn   *pgx.Conn
+	lockID int64
+	ctx    context.Context
 }
 
 // Option is a functional option type for configuring Mutex.
@@ -70,7 +69,6 @@ func (m *Mutex) Lock() error {
 	if err := m.conn.QueryRow(m.ctx, "SELECT pg_advisory_lock($1)", m.lockID).Scan(); err != nil {
 		return fmt.Errorf("failed to acquire lock: %w", err)
 	}
-	m.lockHeld = true
 	return nil
 }
 
@@ -81,20 +79,13 @@ func (m *Mutex) TryLock() (bool, error) {
 	if err := m.conn.QueryRow(m.ctx, "SELECT pg_try_advisory_lock($1)", m.lockID).Scan(&acquired); err != nil {
 		return false, fmt.Errorf("failed to attempt lock acquisition: %w", err)
 	}
-	m.lockHeld = acquired
 	return acquired, nil
 }
 
 // Unlock releases the advisory lock if it's currently held.
 func (m *Mutex) Unlock() error {
-	if !m.lockHeld {
-		return fmt.Errorf("cannot unlock: lock not held by this instance")
-	}
-
 	if err := m.conn.QueryRow(m.ctx, "SELECT pg_advisory_unlock($1)", m.lockID).Scan(); err != nil {
 		return fmt.Errorf("failed to release lock: %w", err)
 	}
-
-	m.lockHeld = false
 	return nil
 }
