@@ -64,6 +64,11 @@ func NewMutex(options ...Option) (*Mutex, error) {
 	return m, nil
 }
 
+// SyncMutex is a wrapper around Mutex that implements sync.Locker interface.
+func (m *Mutex) SyncMutex() SyncMutex {
+	return SyncMutex{m: m}
+}
+
 // Lock tries to acquire the advisory lock, blocking until it's available.
 func (m *Mutex) Lock() error {
 	if err := m.conn.QueryRow(m.ctx, "SELECT pg_advisory_lock($1)", m.lockID).Scan(); err != nil {
