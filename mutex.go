@@ -131,3 +131,8 @@ func (m *Mutex) Unlock() error {
 
 	return nil
 }
+
+// GetResourceID returns the lock ID.
+func (m *Mutex) GetResourceID() int64 {
+	return m.id
+}
