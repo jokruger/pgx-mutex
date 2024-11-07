@@ -14,7 +14,7 @@ Process 1
 ...
 m, _ := pgxmutex.NewSyncMutex(
     pgxmutex.WithConnStr("postgres://postgres:postgres@localhost:5432/postgres"),
-    pgxmutex.WithLockID(123),
+    pgxmutex.WithResourceID(123),
 )
 m.Lock()
 fmt.Println("Process 1 is in critical section")
@@ -28,7 +28,7 @@ Process 2
 ...
 m, _ := pgxmutex.NewSyncMutex(
     pgxmutex.WithConnStr("postgres://postgres:postgres@localhost:5432/postgres"),
-    pgxmutex.WithLockID(123),
+    pgxmutex.WithResourceID(123),
 )
 m.Lock()
 fmt.Println("Process 2 is in critical section")

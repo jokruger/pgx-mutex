@@ -3,16 +3,24 @@ package pgxmutex
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
+
+type Conn interface {
+	Exec(ctx context.Context, sql string, arguments ...interface{}) (pgconn.CommandTag, error)
+	QueryRow(ctx context.Context, sql string, optionsAndArgs ...interface{}) pgx.Row
+}
 
 // Mutex is a distributed lock based on PostgreSQL advisory locks
 type Mutex struct {
-	pool   *pgxpool.Pool
-	lockID int64
-	ctx    context.Context
+	conn Conn
+	id   int64
+	ctx  context.Context
+	m    sync.Mutex
 }
 
 // Option is a functional option type for configuring Mutex.
@@ -21,27 +29,27 @@ type Option func(*Mutex) error
 // WithConnStr creates new PGX connection from a connection string.
 func WithConnStr(connStr string) Option {
 	return func(m *Mutex) error {
-		pool, err := pgxpool.New(context.Background(), connStr)
+		conn, err := pgx.Connect(context.Background(), connStr)
 		if err != nil {
 			return fmt.Errorf("failed to connect to database: %w", err)
 		}
-		m.pool = pool
+		m.conn = conn
 		return nil
 	}
 }
 
-// WithPool sets the PGX connection pool.
-func WithPool(pool *pgxpool.Pool) Option {
+// WithConn sets the custom DB connection.
+func WithConn(conn Conn) Option {
 	return func(m *Mutex) error {
-		m.pool = pool
+		m.conn = conn
 		return nil
 	}
 }
 
-// WithLockID sets the lock ID for advisory locking.
-func WithLockID(lockID int64) Option {
+// WithResourceID sets the lock ID for advisory locking.
+func WithResourceID(id int64) Option {
 	return func(m *Mutex) error {
-		m.lockID = lockID
+		m.id = id
 		return nil
 	}
 }
@@ -69,13 +77,13 @@ func NewMutex(options ...Option) (*Mutex, error) {
 	}
 
 	// Check required fields
-	if m.pool == nil {
-		return nil, fmt.Errorf("database connection pool must be provided")
+	if m.conn == nil {
+		return nil, fmt.Errorf("database connection must be provided")
 	}
 
 	// Generate a lock ID if not provided
-	if m.lockID == 0 {
-		m.lockID = time.Now().UnixNano()
+	if m.id == 0 {
+		m.id = time.Now().UnixNano()
 	}
 
 	return m, nil
@@ -88,26 +96,38 @@ func (m *Mutex) SyncMutex() SyncMutex {
 
 // Lock tries to acquire the advisory lock, blocking until it's available.
 func (m *Mutex) Lock() error {
-	if _, err := m.pool.Exec(m.ctx, "SELECT pg_advisory_lock($1)", m.lockID); err != nil {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	if _, err := m.conn.Exec(m.ctx, "SELECT pg_advisory_lock($1)", m.id); err != nil {
 		return fmt.Errorf("failed to acquire lock: %w", err)
 	}
+
 	return nil
 }
 
 // TryLock attempts to acquire the advisory lock without blocking.
 // Returns an error if unable to acquire the lock.
 func (m *Mutex) TryLock() (bool, error) {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	var acquired bool
-	if err := m.pool.QueryRow(m.ctx, "SELECT pg_try_advisory_lock($1)", m.lockID).Scan(&acquired); err != nil {
+	if err := m.conn.QueryRow(m.ctx, "SELECT pg_try_advisory_lock($1)", m.id).Scan(&acquired); err != nil {
 		return false, fmt.Errorf("failed to attempt lock acquisition: %w", err)
 	}
+
 	return acquired, nil
 }
 
 // Unlock releases the advisory lock if it's currently held.
 func (m *Mutex) Unlock() error {
-	if _, err := m.pool.Exec(m.ctx, "SELECT pg_advisory_unlock($1)", m.lockID); err != nil {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	if _, err := m.conn.Exec(m.ctx, "SELECT pg_advisory_unlock($1)", m.id); err != nil {
 		return fmt.Errorf("failed to release lock: %w", err)
 	}
+
 	return nil
 }
